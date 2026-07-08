@@ -1,0 +1,223 @@
+import type { Anomaly, Candle, HistoryResponse, ServerMessage } from './types'
+
+// A tiny external store, deliberately outside React state: the live feed is
+// 10-40 messages/second and must reach the chart imperatively. Components
+// that render lists (watchlist, anomaly log) subscribe via
+// useSyncExternalStore against immutable snapshots; the chart subscribes to
+// per-symbol events and talks to Lightweight Charts directly.
+
+export interface SymbolData {
+  candles: Candle[]
+  anomalies: Anomaly[]
+  loaded: boolean
+}
+
+export interface TickerRow {
+  symbol: string
+  price: number | null
+  changePct: number | null // over the trailing hour (60 candles at 1m)
+  anomalyCount: number
+  lastAnomalyAt: number | null // wall-clock ms of last *live* anomaly
+}
+
+export type ChartEvent =
+  | { type: 'reset' }
+  | { type: 'candle'; candle: Candle; closed: boolean }
+  | { type: 'anomaly'; anomaly: Anomaly }
+
+const HOUR_CANDLES = 60
+const FEED_LIMIT = 150
+const PENDING_LIMIT = 300
+const TICKER_FLUSH_MS = 250
+
+type PendingEvent =
+  | { kind: 'candle'; candle: Candle; closed: boolean }
+  | { kind: 'anomaly'; anomaly: Anomaly }
+
+class MarketStore {
+  symbols: string[] = []
+  interval = '1m'
+
+  private data = new Map<string, SymbolData>()
+  private pending = new Map<string, PendingEvent[]>()
+  private chartListeners = new Map<string, Set<(ev: ChartEvent) => void>>()
+
+  private tickers: TickerRow[] = []
+  private tickerListeners = new Set<() => void>()
+  private tickerTimer: number | null = null
+  private liveAnomalyAt = new Map<string, number>()
+
+  private feed: Anomaly[] = []
+  private feedListeners = new Set<() => void>()
+
+  // ---- wire protocol -----------------------------------------------------
+
+  handleMessage = (msg: ServerMessage): void => {
+    if (msg.type === 'hello') {
+      this.init(msg.symbols, msg.interval)
+    } else if (msg.type === 'candle') {
+      this.applyCandle(msg.symbol, msg.candle, msg.closed)
+    } else if (msg.type === 'anomaly') {
+      this.applyAnomaly(msg.anomaly, true)
+    }
+  }
+
+  /** Called on every hello — including reconnects, where the reload heals
+   *  any candles missed while the socket was down. */
+  private init(symbols: string[], interval: string): void {
+    this.symbols = symbols
+    this.interval = interval
+    for (const s of symbols) {
+      if (!this.data.has(s)) {
+        this.data.set(s, { candles: [], anomalies: [], loaded: false })
+      }
+    }
+    this.scheduleTickerFlush()
+    void this.loadAllHistory()
+  }
+
+  private async loadAllHistory(): Promise<void> {
+    await Promise.all(
+      this.symbols.map(async (symbol) => {
+        try {
+          const resp = await fetch(`/api/history/${symbol}`)
+          if (!resp.ok) return
+          this.applyHistory((await resp.json()) as HistoryResponse)
+        } catch {
+          // backend not up yet; the next reconnect retries
+        }
+      }),
+    )
+  }
+
+  private applyHistory(resp: HistoryResponse): void {
+    const d = this.data.get(resp.symbol)
+    if (!d) return
+    d.candles = [...resp.candles]
+    d.anomalies = [...resp.anomalies]
+    d.loaded = true
+    const queued = this.pending.get(resp.symbol) ?? []
+    this.pending.delete(resp.symbol)
+    this.emitChart(resp.symbol, { type: 'reset' })
+    for (const ev of queued) {
+      if (ev.kind === 'candle') this.applyCandle(resp.symbol, ev.candle, ev.closed)
+      else this.applyAnomaly(ev.anomaly, true)
+    }
+    this.rebuildFeed()
+    this.scheduleTickerFlush()
+  }
+
+  private applyCandle(symbol: string, candle: Candle, closed: boolean): void {
+    const d = this.data.get(symbol)
+    if (!d) return
+    if (!d.loaded) {
+      this.queuePending(symbol, { kind: 'candle', candle, closed })
+      return
+    }
+    const candles = d.candles
+    const last = candles[candles.length - 1]
+    if (!last || candle.time > last.time) {
+      candles.push(candle)
+    } else if (candle.time === last.time) {
+      candles[candles.length - 1] = candle
+    } else {
+      return // stale
+    }
+    this.emitChart(symbol, { type: 'candle', candle, closed })
+    this.scheduleTickerFlush()
+  }
+
+  private applyAnomaly(anomaly: Anomaly, live: boolean): void {
+    const d = this.data.get(anomaly.symbol)
+    if (!d) return
+    if (!d.loaded) {
+      this.queuePending(anomaly.symbol, { kind: 'anomaly', anomaly })
+      return
+    }
+    if (d.anomalies.some((a) => a.id === anomaly.id)) return
+    d.anomalies.push(anomaly)
+    if (live) this.liveAnomalyAt.set(anomaly.symbol, Date.now())
+    this.emitChart(anomaly.symbol, { type: 'anomaly', anomaly })
+    this.feed = [anomaly, ...this.feed].slice(0, FEED_LIMIT)
+    for (const fn of this.feedListeners) fn()
+    this.scheduleTickerFlush()
+  }
+
+  private queuePending(symbol: string, ev: PendingEvent): void {
+    const queue = this.pending.get(symbol) ?? []
+    queue.push(ev)
+    if (queue.length > PENDING_LIMIT) queue.shift()
+    this.pending.set(symbol, queue)
+  }
+
+  // ---- chart subscription (imperative consumers) --------------------------
+
+  getSymbolData = (symbol: string): SymbolData | undefined => this.data.get(symbol)
+
+  subscribeChart = (symbol: string, fn: (ev: ChartEvent) => void): (() => void) => {
+    const set = this.chartListeners.get(symbol) ?? new Set()
+    set.add(fn)
+    this.chartListeners.set(symbol, set)
+    return () => {
+      set.delete(fn)
+    }
+  }
+
+  private emitChart(symbol: string, ev: ChartEvent): void {
+    const set = this.chartListeners.get(symbol)
+    if (set) for (const fn of set) fn(ev)
+  }
+
+  // ---- watchlist snapshot (useSyncExternalStore) ---------------------------
+
+  getTickers = (): TickerRow[] => this.tickers
+
+  subscribeTickers = (fn: () => void): (() => void) => {
+    this.tickerListeners.add(fn)
+    return () => this.tickerListeners.delete(fn)
+  }
+
+  /** Coalesce high-frequency candle updates into ~4 renders/second. */
+  private scheduleTickerFlush(): void {
+    if (this.tickerTimer !== null) return
+    this.tickerTimer = window.setTimeout(() => {
+      this.tickerTimer = null
+      this.tickers = this.symbols.map((symbol) => {
+        const d = this.data.get(symbol)
+        const candles = d?.candles ?? []
+        const lastCandle = candles[candles.length - 1]
+        const base = candles[candles.length - 1 - HOUR_CANDLES] ?? candles[0]
+        return {
+          symbol,
+          price: lastCandle?.close ?? null,
+          changePct:
+            lastCandle && base && base.close > 0
+              ? ((lastCandle.close - base.close) / base.close) * 100
+              : null,
+          anomalyCount: d?.anomalies.length ?? 0,
+          lastAnomalyAt: this.liveAnomalyAt.get(symbol) ?? null,
+        }
+      })
+      for (const fn of this.tickerListeners) fn()
+    }, TICKER_FLUSH_MS)
+  }
+
+  // ---- global anomaly feed (useSyncExternalStore) ---------------------------
+
+  getFeed = (): Anomaly[] => this.feed
+
+  subscribeFeed = (fn: () => void): (() => void) => {
+    this.feedListeners.add(fn)
+    return () => this.feedListeners.delete(fn)
+  }
+
+  private rebuildFeed(): void {
+    const merged: Anomaly[] = []
+    for (const d of this.data.values()) merged.push(...d.anomalies)
+    merged.sort((a, b) => b.time - a.time)
+    this.feed = merged.slice(0, FEED_LIMIT)
+    for (const fn of this.feedListeners) fn()
+  }
+}
+
+export const marketStore = new MarketStore()

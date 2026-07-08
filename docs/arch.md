@@ -79,7 +79,7 @@ A running system that:
 1. Streams live crypto price data from Binance.
 2. Aggregates ticks into candles (e.g., 1-minute).
 3. Detects statistical anomalies (Z-score + Isolation Forest) on price/volume.
-4. Displays a **dark-mode candlestick chart** in the browser that **updates live** and **marks anomalies** on the chart.
+4. Displays a **dark-mode and light-mode candlestick chart** in the browser that **updates live** and **marks anomalies** on the chart.
 
 This alone is a complete, honest, working demo. It maps to INGEST + DETECT + VISUALIZE.
 
