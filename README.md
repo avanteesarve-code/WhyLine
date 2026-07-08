@@ -130,6 +130,10 @@ network).
 
 ## Team
 
-Rashmin Chaudhari · Avantee Sarve · Shambhavi Tongaonkar · Swayam Takkamore —
-guided by Prof. Sanket Joshi, Dept. of CSBS, St. Vincent Pallotti College of
-Engineering & Technology, Nagpur.
+- Rashmin Chaudhari
+- Avantee Sarve
+- Shambhavi Tongaonkar
+- Swayam Takkamore
+
+Dept. of Computer Science and Business Systems </br>
+St. Vincent Pallotti College of Engineering & Technology, Nagpur.
