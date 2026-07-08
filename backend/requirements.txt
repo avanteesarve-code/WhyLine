@@ -1,7 +1,13 @@
 fastapi
-uvicorn
+uvicorn[standard]
 websockets
-pandas
+httpx
+certifi
 numpy
+pandas
 scikit-learn
 python-dotenv
+pydantic
+
+# dev / tests
+pytest
