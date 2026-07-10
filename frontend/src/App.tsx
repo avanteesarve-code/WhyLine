@@ -43,7 +43,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="brand">
-          <span className="brand-mark">⚡</span>
+          <img className="brand-mark" src="/logo_rm.png" alt="WhyLine logo" />
           <div>
             <h1>WhyLine</h1>
             <p>real-time anomaly detection · Binance {marketStore.interval} klines</p>

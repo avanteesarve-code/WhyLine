@@ -88,8 +88,18 @@ ul {
 }
 
 .brand-mark {
-  font-size: 22px;
-  color: var(--anomaly);
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  display: block;
+}
+
+/* The logo is drawn on white; on the dark surface a subtle rounded plate
+   keeps it from floating. On light it blends into the surface already. */
+:root[data-theme='dark'] .brand-mark {
+  background: #fff;
+  border-radius: 8px;
+  padding: 3px;
 }
 
 .brand h1 {
