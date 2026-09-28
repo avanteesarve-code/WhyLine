@@ -399,6 +399,8 @@ ul {
   position: absolute;
   z-index: 20;
   width: 280px;
+  max-height: 340px;
+  overflow-y: auto;
   padding: 10px 12px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(4px);
@@ -558,7 +560,6 @@ ul {
   width: 10px;
   height: 10px;
 }
-
 ::-webkit-scrollbar-thumb {
   background: var(--grid);
   border-radius: 5px;
@@ -567,4 +568,150 @@ ul {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---------- semantic context (Milestone B attribution) ---------- */
+
+.ctx-section {
+  min-width: 0;
+}
+
+.ctx-tooltip {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.ctx-log {
+  padding: 4px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ctx-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctx-heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ink-2);
+}
+
+.ctx-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  border: 1px dashed var(--muted);
+  border-radius: 4px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.ctx-caption {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.ctx-note {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.ctx-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.anomaly-log .ctx-hint {
+  margin: 0;
+  padding: 4px 12px 10px;
+}
+
+.ctx-list {
+  margin: 6px 0 0;
+}
+
+.ctx-item {
+  margin: 0 0 8px;
+  min-width: 0;
+}
+
+.ctx-item:last-child {
+  margin-bottom: 0;
+}
+
+.ctx-log .ctx-item + .ctx-item {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.ctx-headline {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.ctx-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ctx-link:hover {
+  color: var(--ink);
+}
+
+.ctx-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ctx-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ctx-tone {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* Fallback/sample context is visibly distinct: dashed outline, muted tone. */
+.ctx-fallback {
+  border: 1px dashed var(--muted);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.anomaly-log .ctx-fallback {
+  margin: 6px 12px 10px;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--muted);
+}
+
+.ctx-fallback .ctx-note {
+  font-style: italic;
 }

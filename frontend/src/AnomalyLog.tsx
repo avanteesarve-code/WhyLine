@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import AttributionView from './AttributionView'
 import { marketStore } from './marketStore'
 import { fmtLocalTime, fmtPct } from './format'
 
@@ -38,6 +39,11 @@ export default function AnomalyLog({ onJump }: Props) {
               </div>
               <p className="log-text">{a.explanation}</p>
             </button>
+            <AttributionView
+              attribution={a.attribution}
+              anomalyTime={a.time}
+              variant="log"
+            />
           </li>
         ))}
         {feed.length === 0 && (

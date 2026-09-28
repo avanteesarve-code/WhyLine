@@ -16,6 +16,7 @@ import type {
   Time,
 } from 'lightweight-charts'
 import { marketStore } from './marketStore'
+import AttributionView from './AttributionView'
 import { chartColors, chartOptions } from './theme'
 import type { ChartColors } from './theme'
 import {
@@ -52,6 +53,10 @@ const METHOD_LABELS: Record<string, string> = {
   volume_z: 'volume z-score',
   isolation_forest: 'Isolation Forest',
 }
+
+// Tallest the hover tooltip may grow (attribution content included); the
+// CSS max-height on .anomaly-tooltip matches this value.
+const TOOLTIP_MAX_HEIGHT = 340
 
 function toCandleData(c: Candle): CandlestickData {
   return {
@@ -205,7 +210,7 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
       if (ev.type === 'candle') {
         candlesRef.current.update(toCandleData(ev.candle))
         volumeRef.current!.update(toVolumeData(ev.candle, colors))
-      } else {
+      } else if (ev.type === 'anomaly') {
         const d = marketStore.getSymbolData(symbol)
         if (!d) return
         anomalyIndexRef.current.set(
@@ -213,6 +218,18 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
           ev.anomaly,
         )
         markersRef.current!.setMarkers(d.anomalies.map((a) => toMarker(a, colors)))
+      } else if (ev.type === 'attribution') {
+        // Update-only: refresh the indexed anomaly (and the open tooltip)
+        // without touching markers.
+        anomalyIndexRef.current.set(
+          toChartTime(ev.anomaly.time) as number,
+          ev.anomaly,
+        )
+        setHover((prev) =>
+          prev && prev.anomaly.id === ev.anomaly.id
+            ? { ...prev, anomaly: ev.anomaly }
+            : prev,
+        )
       }
     })
     return unsubscribe
@@ -247,7 +264,10 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
     ? Math.min(hover.x + 16, (el?.clientWidth ?? 600) - 300)
     : 0
   const tooltipTop = hover
-    ? Math.min(Math.max(hover.y - 40, 8), (el?.clientHeight ?? 400) - 210)
+    ? Math.min(
+        Math.max(hover.y - 40, 8),
+        (el?.clientHeight ?? 400) - TOOLTIP_MAX_HEIGHT,
+      )
     : 0
 
   return (
@@ -303,7 +323,11 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
                 </span>
               ))}
             </div>
-            <p className="tooltip-hint">semantic context arrives in Milestone B</p>
+            <AttributionView
+              attribution={hover.anomaly.attribution}
+              anomalyTime={hover.anomaly.time}
+              variant="tooltip"
+            />
           </div>
         )}
       </div>

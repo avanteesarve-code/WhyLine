@@ -8,6 +8,8 @@ pandas
 scikit-learn
 python-dotenv
 pydantic
+transformers
+torch
 
 # dev / tests
 pytest

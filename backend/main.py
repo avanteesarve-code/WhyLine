@@ -22,8 +22,16 @@ import detect
 import ingest
 from config import Settings
 from config import settings as default_settings
-from models import Candle, anomaly_message, candle_message, hello_message
+from models import (
+    Attribution,
+    Candle,
+    anomaly_message,
+    candle_message,
+    hello_message,
+)
 from state import MarketState
+
+import attribute
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -64,13 +72,28 @@ async def bootstrap(market: MarketState) -> None:
 async def stream_worker(market: MarketState) -> None:
     """Consume the Binance stream and fan events out to frontend sockets."""
     s = market.settings
+    attribution_tasks: set[asyncio.Task] = set()
 
     async def deliver(symbol: str, candle: Candle, closed: bool) -> None:
         anomaly = market.apply_kline(symbol, candle, closed)
         await market.broadcaster.broadcast(candle_message(symbol, candle, closed))
         if anomaly is not None:
             log.info("ANOMALY %s: %s", symbol, anomaly.explanation)
+            if s.attribution_enabled:
+                # Mark pending BEFORE the immediate broadcast; the final
+                # attribution arrives later as a separate message. Never
+                # awaited here, so the feed never waits for news/sentiment.
+                anomaly.attribution = Attribution(status="pending")
             await market.broadcaster.broadcast(anomaly_message(anomaly))
+            if s.attribution_enabled:
+                task = asyncio.create_task(
+                    attribute.run_attribution(
+                        anomaly, s, market.broadcaster.broadcast
+                    ),
+                    name=f"attribution-{anomaly.id}",
+                )
+                attribution_tasks.add(task)
+                task.add_done_callback(attribution_tasks.discard)
 
     async def resync(first: bool) -> None:
         if first:
@@ -87,9 +110,18 @@ async def stream_worker(market: MarketState) -> None:
             for candle in candles:
                 await deliver(symbol, candle, True)
 
-    await ingest.run_kline_stream(
-        s.symbols, s.interval, deliver, base=s.ws_base, on_connect=resync
-    )
+    try:
+        await ingest.run_kline_stream(
+            s.symbols, s.interval, deliver, base=s.ws_base, on_connect=resync
+        )
+    finally:
+        # Shut down background attribution without stalling the feed:
+        # cancel in-flight tasks, absorb their outcome, re-raise if we
+        # are being cancelled ourselves.
+        if attribution_tasks:
+            for pending in attribution_tasks:
+                pending.cancel()
+            await asyncio.gather(*attribution_tasks, return_exceptions=True)
 
 
 def create_app(
