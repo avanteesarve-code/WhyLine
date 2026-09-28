@@ -19,7 +19,7 @@ have a searchable cause — chosen so Milestone B can viably attribute them:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -44,6 +44,18 @@ def _env_symbols(raw: str | None) -> tuple[str, ...]:
         return DEFAULT_SYMBOLS
     parsed = tuple(s.strip().upper() for s in raw.split(",") if s.strip())
     return parsed or DEFAULT_SYMBOLS
+
+
+def _env_api_key(raw: str | None) -> str | None:
+    if raw is None or not raw.strip():
+        return None
+    return raw.strip()
+
+
+def _env_flag(raw: str | None, default: bool) -> bool:
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 @dataclass(frozen=True)
@@ -74,6 +86,15 @@ class Settings:
     max_candles_kept: int = 3000
     max_anomalies_kept: int = 300
 
+    # Milestone B news fetch (Finnhub market news; not wired into anomalies yet)
+    news_api_key: str | None = field(default=None, repr=False)
+    news_api_base: str = "https://finnhub.io/api/v1"
+    news_window_before: int = 3600  # seconds before the anomaly time
+    news_window_after: int = 900  # seconds after the anomaly time
+    news_max_items: int = 5
+    news_timeout: float = 5.0  # seconds per provider request
+    news_fallback_enabled: bool = True  # serve local sample headlines on failure
+
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
@@ -100,6 +121,19 @@ class Settings:
             ),
             iforest_contamination=float(
                 os.getenv("IFOREST_CONTAMINATION", cls.iforest_contamination)
+            ),
+            news_api_key=_env_api_key(os.getenv("NEWS_API_KEY")),
+            news_api_base=os.getenv("NEWS_API_BASE", cls.news_api_base),
+            news_window_before=int(
+                os.getenv("NEWS_WINDOW_BEFORE", cls.news_window_before)
+            ),
+            news_window_after=int(
+                os.getenv("NEWS_WINDOW_AFTER", cls.news_window_after)
+            ),
+            news_max_items=int(os.getenv("NEWS_MAX_ITEMS", cls.news_max_items)),
+            news_timeout=float(os.getenv("NEWS_TIMEOUT", cls.news_timeout)),
+            news_fallback_enabled=_env_flag(
+                os.getenv("NEWS_FALLBACK_ENABLED"), cls.news_fallback_enabled
             ),
         )
 

@@ -1,0 +1,51 @@
+{
+  "_note": "Sample headlines for development and tests only. These are generic placeholders, not real news events. Used by backend/news.py when the Finnhub API is unavailable (or unconfigured) and fallback is enabled.",
+  "BTCUSDT": [
+    { "headline": "Bitcoin volatility picks up as traders react to a busy macro news cycle" },
+    { "headline": "Bitcoin fund-flow chatter surrounds the latest price swing" },
+    { "headline": "Analysts debate bitcoin's next move after a sharp intraday candle" }
+  ],
+  "ETHUSDT": [
+    { "headline": "Ethereum moves with the broader market as upgrade chatter resurfaces" },
+    { "headline": "Ether fund speculation returns to headlines amid volatile trading" },
+    { "headline": "Ethereum network activity draws attention after a sudden price move" }
+  ],
+  "SOLUSDT": [
+    { "headline": "Solana ecosystem headlines circulate as SOL sees sudden volatility" },
+    { "headline": "SOL traders watch network chatter after an abrupt price swing" }
+  ],
+  "XRPUSDT": [
+    { "headline": "XRP moves sharply as regulatory headlines recirculate" },
+    { "headline": "Ripple legal-case chatter resurfaces alongside an XRP price swing" }
+  ],
+  "BNBUSDT": [
+    { "headline": "Binance exchange headlines coincide with a BNB price move" },
+    { "headline": "BNB traders react to fresh exchange-related news chatter" }
+  ],
+  "DOGEUSDT": [
+    { "headline": "Dogecoin spikes as social media chatter picks up" },
+    { "headline": "DOGE volatility returns amid a wave of meme-coin posts" }
+  ],
+  "ADAUSDT": [
+    { "headline": "Cardano protocol milestone chatter follows an ADA price swing" },
+    { "headline": "ADA traders weigh development headlines after sudden volatility" }
+  ],
+  "AVAXUSDT": [
+    { "headline": "Avalanche partnership chatter circulates as AVAX moves sharply" },
+    { "headline": "AVAX ecosystem headlines draw attention after a price spike" }
+  ],
+  "LINKUSDT": [
+    { "headline": "Chainlink partnership headlines surface as LINK sees volatility" },
+    { "headline": "LINK traders cite oracle-adoption chatter after a sudden move" }
+  ],
+  "LTCUSDT": [
+    { "headline": "Litecoin payments-adoption headlines resurface amid a price swing" },
+    { "headline": "LTC moves with the market as halving-cycle talk reappears" }
+  ],
+  "crypto": [
+    { "headline": "Crypto market swings as cross-asset headlines pile up" },
+    { "headline": "Altcoins move in tandem with bitcoin during a volatile hour" },
+    { "headline": "Market-wide crypto sentiment shifts amid mixed headlines" },
+    { "headline": "Traders scan crypto news feeds for a catalyst behind the move" }
+  ]
+}
