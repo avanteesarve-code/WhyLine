@@ -100,6 +100,10 @@ class Settings:
     sentiment_enabled: bool = True
     sentiment_model: str = "ProsusAI/finbert"
 
+    # Milestone B attribution workflow (attribute.py): fetch news + score
+    # headlines in the background after a live anomaly is broadcast.
+    attribution_enabled: bool = True
+
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
@@ -145,6 +149,9 @@ class Settings:
             ),
             sentiment_model=(os.getenv("SENTIMENT_MODEL") or "").strip()
             or cls.sentiment_model,
+            attribution_enabled=_env_flag(
+                os.getenv("ATTRIBUTION_ENABLED"), cls.attribution_enabled
+            ),
         )
 
 
