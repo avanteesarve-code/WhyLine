@@ -113,10 +113,12 @@ class MarketStore {
     const d = this.data.get(resp.symbol)
     if (!d) return
     d.candles = [...resp.candles]
-    // Reconnect race: attribution may have completed (final) after the
-    // history snapshot was serialized. Never let a stale snapshot undo it,
-    // and never introduce a `pending` state where none was known. The
-    // backend response object itself is left untouched.
+    // Reconnect race: the history snapshot may be older than live state in
+    // either direction. Never let a stale snapshot undo known attribution:
+    // a final state (ok / no_news / error) is never replaced by pending or
+    // null, a known pending is never replaced by null, and an incoming
+    // pending is adopted (it carries the loading state the backend
+    // assigned). The backend response object itself is left untouched.
     const existingById = new Map(d.anomalies.map((a) => [a.id, a]))
     d.anomalies = resp.anomalies.map((incoming) => {
       const existing = existingById.get(incoming.id)
@@ -128,10 +130,10 @@ class MarketStore {
         return { ...incoming, attribution: existing.attribution }
       }
       if (
-        !existing.attribution &&
-        incoming.attribution?.status === 'pending'
+        existing.attribution?.status === 'pending' &&
+        !incoming.attribution
       ) {
-        return { ...incoming, attribution: null }
+        return { ...incoming, attribution: existing.attribution }
       }
       return incoming
     })
@@ -175,7 +177,37 @@ class MarketStore {
       this.queuePending(anomaly.symbol, { kind: 'anomaly', anomaly })
       return
     }
-    if (d.anomalies.some((a) => a.id === anomaly.id)) return
+    const existingIdx = d.anomalies.findIndex((a) => a.id === anomaly.id)
+    if (existingIdx >= 0) {
+      // Duplicate delivery (e.g. history already contained this id while a
+      // live event carries newer attribution progress): merge the
+      // attribution forward instead of dropping it. Ordering, counts, and
+      // final states are untouched — a final (ok / no_news / error) state
+      // is never downgraded.
+      const existing = d.anomalies[existingIdx]
+      const incoming = anomaly.attribution
+      if (
+        incoming &&
+        (!existing.attribution ||
+          (existing.attribution.status === 'pending' &&
+            incoming.status !== 'pending'))
+      ) {
+        const updated: Anomaly = { ...existing, attribution: incoming }
+        d.anomalies[existingIdx] = updated
+        const feedIdx = this.feed.findIndex((a) => a.id === anomaly.id)
+        if (feedIdx >= 0) {
+          this.feed = [
+            ...this.feed.slice(0, feedIdx),
+            updated,
+            ...this.feed.slice(feedIdx + 1),
+          ]
+          for (const fn of this.feedListeners) fn()
+        }
+        this.emitChart(anomaly.symbol, { type: 'attribution', anomaly: updated })
+      }
+      if (live) this.liveAnomalyAt.set(anomaly.symbol, Date.now())
+      return
+    }
     d.anomalies.push(anomaly)
     if (live) this.liveAnomalyAt.set(anomaly.symbol, Date.now())
     this.emitChart(anomaly.symbol, { type: 'anomaly', anomaly })

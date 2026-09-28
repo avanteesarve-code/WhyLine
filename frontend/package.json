@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:store": "node scripts/store-merge-test.mjs",
+    "test:views": "node scripts/attribution-view-test.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

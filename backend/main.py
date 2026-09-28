@@ -76,19 +76,26 @@ async def stream_worker(market: MarketState) -> None:
 
     async def deliver(symbol: str, candle: Candle, closed: bool) -> None:
         anomaly = market.apply_kline(symbol, candle, closed)
+        if anomaly is not None and s.attribution_enabled:
+            # Mark pending on the AUTHORITATIVE stored anomaly BEFORE the
+            # first await below: REST readers can never observe a live
+            # anomaly with attribution=None, and the broadcast + background
+            # task below operate on the same stored object the API serves.
+            # The final attribution arrives later as a separate message;
+            # attribution is never awaited here, so the feed never waits
+            # for news/sentiment.
+            stored = market.mark_pending(symbol, anomaly.id)
+            anomaly = stored if stored is not None else anomaly
+            if stored is None:
+                anomaly.attribution = Attribution(status="pending")
         await market.broadcaster.broadcast(candle_message(symbol, candle, closed))
         if anomaly is not None:
             log.info("ANOMALY %s: %s", symbol, anomaly.explanation)
-            if s.attribution_enabled:
-                # Mark pending BEFORE the immediate broadcast; the final
-                # attribution arrives later as a separate message. Never
-                # awaited here, so the feed never waits for news/sentiment.
-                anomaly.attribution = Attribution(status="pending")
             await market.broadcaster.broadcast(anomaly_message(anomaly))
             if s.attribution_enabled:
                 task = asyncio.create_task(
                     attribute.run_attribution(
-                        anomaly, s, market.broadcaster.broadcast
+                        anomaly, s, market.broadcaster.broadcast, state=market
                     ),
                     name=f"attribution-{anomaly.id}",
                 )

@@ -136,9 +136,13 @@ class TestTimeWindow:
         assert result.reason is None
         assert len(result.items) == 1
 
-    def test_just_before_lower_boundary_excluded(self):
+    def test_just_before_lower_boundary_relaxed(self):
+        # A keyword-relevant real article just outside the strict window is
+        # served as real news (relaxed pass), never as sample headlines.
         result, _ = self.fetch_at(T - 3601)
-        assert result.reason == "no_match"
+        assert result.reason == "relaxed_window"
+        assert result.is_fallback is False
+        assert len(result.items) == 1
 
     def test_inclusive_upper_boundary(self):
         result, _ = self.fetch_at(T + 900)
@@ -146,6 +150,7 @@ class TestTimeWindow:
         assert len(result.items) == 1
 
     def test_just_after_upper_boundary_excluded(self):
+        # The relaxed pass extends only the lookback, never the future edge.
         result, _ = self.fetch_at(T + 901)
         assert result.reason == "no_match"
 
@@ -400,10 +405,13 @@ class TestAuth:
 
 class TestSettings:
     NEWS_VARS = (
+        "FINNHUB_API_KEY",
         "NEWS_API_KEY",
         "NEWS_API_BASE",
         "NEWS_WINDOW_BEFORE",
         "NEWS_WINDOW_AFTER",
+        "NEWS_RELAXED_WINDOW_BEFORE",
+        "NEWS_CACHE_TTL",
         "NEWS_MAX_ITEMS",
         "NEWS_TIMEOUT",
         "NEWS_FALLBACK_ENABLED",
@@ -420,6 +428,8 @@ class TestSettings:
         assert settings.news_api_base == "https://finnhub.io/api/v1"
         assert settings.news_window_before == 3600
         assert settings.news_window_after == 900
+        assert settings.news_relaxed_window_before == 86400
+        assert settings.news_cache_ttl == 120.0
         assert settings.news_max_items == 5
         assert settings.news_timeout == 5.0
         assert settings.news_fallback_enabled is True
@@ -430,6 +440,8 @@ class TestSettings:
         monkeypatch.setenv("NEWS_API_BASE", "https://example.com/v1")
         monkeypatch.setenv("NEWS_WINDOW_BEFORE", "120")
         monkeypatch.setenv("NEWS_WINDOW_AFTER", "60")
+        monkeypatch.setenv("NEWS_RELAXED_WINDOW_BEFORE", "3600")
+        monkeypatch.setenv("NEWS_CACHE_TTL", "45")
         monkeypatch.setenv("NEWS_MAX_ITEMS", "3")
         monkeypatch.setenv("NEWS_TIMEOUT", "2.5")
         monkeypatch.setenv("NEWS_FALLBACK_ENABLED", "YeS")
@@ -438,6 +450,8 @@ class TestSettings:
         assert settings.news_api_base == "https://example.com/v1"
         assert settings.news_window_before == 120
         assert settings.news_window_after == 60
+        assert settings.news_relaxed_window_before == 3600
+        assert settings.news_cache_ttl == 45.0
         assert settings.news_max_items == 3
         assert settings.news_timeout == 2.5
         assert settings.news_fallback_enabled is True

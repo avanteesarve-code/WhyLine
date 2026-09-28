@@ -11,7 +11,7 @@ from fastapi import WebSocket
 
 from config import Settings
 from detect import SymbolDetector
-from models import Anomaly, Candle
+from models import Anomaly, Attribution, Candle
 
 log = logging.getLogger("whyline.state")
 
@@ -102,6 +102,52 @@ class MarketState:
         if anomaly is not None:
             ss.anomalies.append(anomaly)
         return anomaly
+
+    def get_anomaly(self, symbol: str, anomaly_id: str) -> Anomaly | None:
+        """Return the authoritative stored anomaly, or None if unknown."""
+        ss = self.symbols.get(symbol)
+        if ss is None:
+            return None
+        for anomaly in ss.anomalies:
+            if anomaly.id == anomaly_id:
+                return anomaly
+        return None
+
+    def mark_pending(self, symbol: str, anomaly_id: str) -> Anomaly | None:
+        """Mark the authoritative stored anomaly as pending attribution.
+
+        Only transitions ``None -> pending``; a final state (ok / no_news /
+        error) is never downgraded. Returns the stored object (or None when
+        the id is unknown) so callers broadcast and attribute the same
+        authoritative instance that REST serves.
+        """
+        stored = self.get_anomaly(symbol, anomaly_id)
+        if stored is None:
+            return None
+        if stored.attribution is None:
+            stored.attribution = Attribution(status="pending")
+        return stored
+
+    def set_attribution(
+        self, symbol: str, anomaly_id: str, attribution: Attribution
+    ) -> Anomaly | None:
+        """Attach the final Attribution to the authoritative stored anomaly.
+
+        A final state is never downgraded back to ``pending``. Returns the
+        stored object (or None when the id is unknown).
+        """
+        stored = self.get_anomaly(symbol, anomaly_id)
+        if stored is None:
+            return None
+        current = stored.attribution
+        if (
+            current is not None
+            and current.status in ("ok", "no_news", "error")
+            and attribution.status == "pending"
+        ):
+            return stored
+        stored.attribution = attribution
+        return stored
 
     def history(self, symbol: str) -> tuple[list[Candle], list[Anomaly]] | None:
         """Closed candles (+ the forming candle, if newer) and anomalies."""

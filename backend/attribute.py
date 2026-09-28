@@ -30,12 +30,15 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 import news
 import sentiment
 from config import Settings
 from models import Anomaly, Attribution, attribution_message
+
+if TYPE_CHECKING:
+    from state import MarketState
 
 log = logging.getLogger("whyline.attribute")
 
@@ -203,12 +206,15 @@ async def run_attribution(
     *,
     news_client: object | None = None,
     classifier: object | None = None,
+    state: MarketState | None = None,
 ) -> None:
     """Attach the final Attribution and broadcast it. Never crashes callers.
 
-    The anomaly is mutated on the event-loop thread (never in the worker
-    thread) and published with the existing ``attribution_message`` helper.
-    ``asyncio.CancelledError`` is re-raised so shutdown keeps working.
+    The authoritative stored anomaly (resolved through ``state`` when given,
+    otherwise the passed object itself) is mutated on the event-loop thread
+    (never in the worker thread) and published with the existing
+    ``attribution_message`` helper. ``asyncio.CancelledError`` is re-raised
+    so shutdown keeps working.
     """
     start = time.perf_counter()
     try:
@@ -221,7 +227,16 @@ async def run_attribution(
         log.warning("attribution run for %s failed (%s)", anomaly.id, type(exc).__name__)
         result = _INTERNAL_ERROR
 
-    anomaly.attribution = result
+    if state is not None:
+        # Single source of truth: update the stored anomaly by id so REST
+        # and WebSocket always expose the same object the API serves.
+        stored = state.set_attribution(anomaly.symbol, anomaly.id, result)
+        if stored is not None:
+            anomaly = stored
+        else:
+            anomaly.attribution = result
+    else:
+        anomaly.attribution = result
     try:
         await broadcast(attribution_message(anomaly.id, anomaly.symbol, result))
     except asyncio.CancelledError:

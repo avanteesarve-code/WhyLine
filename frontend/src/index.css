@@ -602,17 +602,6 @@ ul {
   color: var(--ink-2);
 }
 
-.ctx-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  color: var(--muted);
-  border: 1px dashed var(--muted);
-  border-radius: 4px;
-  padding: 0 5px;
-  white-space: nowrap;
-}
-
 .ctx-caption {
   margin: 2px 0 6px;
   font-size: 11px;
@@ -699,19 +688,4 @@ ul {
   white-space: nowrap;
 }
 
-/* Fallback/sample context is visibly distinct: dashed outline, muted tone. */
-.ctx-fallback {
-  border: 1px dashed var(--muted);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
 
-.anomaly-log .ctx-fallback {
-  margin: 6px 12px 10px;
-  padding: 8px 10px;
-  border-bottom: 1px dashed var(--muted);
-}
-
-.ctx-fallback .ctx-note {
-  font-style: italic;
-}

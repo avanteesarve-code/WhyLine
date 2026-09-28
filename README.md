@@ -11,12 +11,15 @@ by attaching sentiment-scored news to each anomaly.
 
 ## Status
 
-- ✅ **Milestone A (this repo, done)** — the quantitative half:
+- ✅ **Milestone A (done)** — the quantitative half:
   live Binance ingest → z-score + Isolation Forest detection → live chart
   with historical backfill, anomaly markers, tooltips, watchlist, anomaly log,
   dark/light themes.
-- 🔜 **Milestone B** — the semantic half: news fetch + FinBERT sentiment
-  attached to each anomaly (`backend/attribute.py`).
+- ✅ **Milestone B (done)** — the semantic half: every live anomaly is
+  immediately marked `pending`, then enriched asynchronously with Finnhub
+  crypto news + FinBERT headline sentiment (`backend/attribute.py`,
+  `backend/news.py`, `backend/sentiment.py`). The UI renders **real news
+  only** — sample/fallback headlines are never displayed.
 
 ## Architecture (Milestone A)
 
@@ -33,10 +36,17 @@ by attaching sentiment-scored news to each anomaly.
    │               + Isolation Forest (streaming  │
    │               refits; offline scan for       │
    │               backfilled history)            │
-   │  state.py     per-symbol candles/anomalies,  │
-   │               WebSocket broadcaster          │
-   │  main.py      GET /api/history/{sym}         │
-   │               GET /api/anomalies, /ws        │
+│  state.py     per-symbol candles/anomalies,  │
+│               authoritative attribution      │
+│               state, WebSocket broadcaster   │
+│  main.py      GET /api/history/{sym}         │
+│               GET /api/anomalies, /ws        │
+│  attribute.py async news + sentiment per live│
+│               anomaly (pending → ok)         │
+│  news.py      Finnhub crypto news (real      │
+│               articles; sample fallback kept │
+│               server-side only, never shown) │
+│  sentiment.py FinBERT headline tone          │
    └──────────────────────┬───────────────────────┘
                           │ candles + anomaly events (JSON)
                           ▼
@@ -59,6 +69,18 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --port 8000
 ```
+
+Real news needs a free Finnhub key (https://finnhub.io/dashboard).
+Put it in `backend/.env` (gitignored — never commit it):
+
+```bash
+FINNHUB_API_KEY=
+```
+
+See `backend/.env.example` for every knob (symbols, thresholds, news
+windows, sentiment, attribution). Without a key the pipeline still works
+end-to-end but serves sample fallback headlines internally, which the UI
+deliberately does not render.
 
 Frontend (Node 18+), in a second terminal:
 
@@ -114,13 +136,17 @@ Tune thresholds against real history with `python backend/tune.py`.
 ## Tests
 
 ```bash
-cd backend && ./venv/bin/python -m pytest tests -q     # 33 tests
+cd backend && ./venv/bin/python -m pytest tests -q     # 206 tests, offline
+cd frontend && npm run test:store && npm run test:views && npm run build
 ```
 
 Covers the z-score math (including streaming/batch agreement), Isolation
 Forest flagging of planted outliers, cooldown/warmup behaviour, Binance
-REST/WS parsing, backfill pagination, and the API surface — all offline (no
-network).
+REST/WS parsing, backfill pagination, the API surface, the live
+pending → attribution flow against the authoritative anomaly state,
+Finnhub request/response mapping (mocked — no network, no API key needed),
+frontend store merging, and attribution rendering (real news shown, sample
+never shown) — all offline.
 
 ## Screenshots
 

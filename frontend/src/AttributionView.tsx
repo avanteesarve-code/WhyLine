@@ -2,9 +2,12 @@ import { fmtLocalTime } from './format'
 import type { Attribution, NewsItem } from './types'
 
 // Presentational rendering of a backend Attribution. Receives everything
-// through props; never touches the market store. Wording stays associative
-// ("related", "associated") — attribution is semantic context, not proof
-// that a headline moved the market. Headline tone is not a price signal.
+// through props; never touches the market store. Only REAL provider news is
+// ever rendered: fallback/sample items (is_fallback) are never shown as
+// news — they collapse to a minimal "no news" / "unavailable" state.
+// Wording stays associative ("related", "associated") — attribution is
+// semantic context, not proof that a headline moved the market. Headline
+// tone is not a price signal.
 
 interface AttributionViewProps {
   attribution: Attribution | null | undefined
@@ -23,19 +26,15 @@ function fmtOffset(publishedAt: number, anomalyTime: number): string {
   return `${absMin} min ${side}`
 }
 
-/** Backend error codes are never shown raw; map them to friendly notes. */
+/** Backend error codes are never shown raw; map them to friendly notes.
+ * Provider-failure wording is deliberately minimal: sample/fallback data is
+ * never rendered, so there is nothing to explain beyond unavailability. */
 function errorNotes(attribution: Attribution): string[] {
   const notes: string[] = []
   const err = attribution.error ?? ''
   if (err.includes('sentiment_')) notes.push('Headline sentiment unavailable.')
-  if (err.includes('news_')) {
-    if (attribution.is_fallback && err.includes('news_no_api_key')) {
-      notes.push('News provider not configured.')
-    } else if (attribution.is_fallback && err.includes('news_no_match')) {
-      notes.push('No matching provider news found.')
-    } else {
-      notes.push('News provider unavailable.')
-    }
+  if (err.includes('news_broad_market')) {
+    notes.push('Broad crypto-market context — no asset-specific articles found.')
   }
   return notes
 }
@@ -89,64 +88,51 @@ export default function AttributionView({
   anomalyTime,
   variant,
 }: AttributionViewProps): React.JSX.Element | null {
-  // Historical anomalies (or disabled attribution) carry no attribution.
+  // Historical anomalies (or disabled attribution) carry no attribution:
+  // render nothing so the card stays clean.
   if (!attribution) {
-    if (variant === 'log') return null
-    return (
-      <p className="ctx-hint">Related news is gathered for live anomalies only.</p>
-    )
+    return null
   }
 
   if (attribution.status === 'pending') {
-    return <p className="ctx-hint">Loading related context...</p>
+    return <p className="ctx-hint">Finding related news...</p>
+  }
+
+  // Fallback/sample items are never rendered as news. Collapse them to the
+  // same minimal states as genuinely having no real articles.
+  if (attribution.is_fallback) {
+    if (attribution.status === 'error') {
+      return <p className="ctx-hint">Related news unavailable.</p>
+    }
+    return <p className="ctx-hint">No related news found.</p>
   }
 
   if (
     attribution.status === 'no_news' ||
     (attribution.status === 'ok' && attribution.items.length === 0)
   ) {
-    return <p className="ctx-hint">No relevant news found for this anomaly.</p>
+    return <p className="ctx-hint">No related news found.</p>
   }
 
   if (attribution.status === 'error') {
-    return (
-      <div className={`ctx-section ctx-${variant}`}>
-        <p className="ctx-hint">Unable to load attribution.</p>
-        {errorNotes(attribution).map((note) => (
-          <p key={note} className="ctx-note">
-            {note}
-          </p>
-        ))}
-      </div>
-    )
+    return <p className="ctx-hint">Related news unavailable.</p>
   }
 
-  // status === 'ok' with at least one item.
-  const fallback = attribution.is_fallback
+  // status === 'ok' with at least one REAL item.
   const items =
     variant === 'tooltip'
       ? attribution.items.slice(0, TOOLTIP_LIMIT)
       : attribution.items
   const extra = attribution.items.length - items.length
-  // Links only in the log, only for real provider news with http(s) URLs —
-  // never for fallback/sample context.
-  const allowLink = variant === 'log' && !fallback
+  // Links only in the log, only for real provider news with http(s) URLs.
+  const allowLink = variant === 'log'
 
   return (
-    <section
-      className={`ctx-section ctx-${variant}${fallback ? ' ctx-fallback' : ''}`}
-    >
+    <section className={`ctx-section ctx-${variant}`}>
       <div className="ctx-heading-row">
-        <h4 className="ctx-heading">
-          {fallback ? 'Fallback context' : 'Related news'}
-        </h4>
-        {fallback && <span className="ctx-badge">SAMPLE</span>}
+        <h4 className="ctx-heading">Related news</h4>
       </div>
-      {fallback ? (
-        <p className="ctx-note">Sample headlines, not real news</p>
-      ) : (
-        <p className="ctx-caption">Semantic context — association, not causation</p>
-      )}
+      <p className="ctx-caption">Semantic context — association, not causation</p>
       <ul className="ctx-list">
         {items.map((item, i) => (
           <li key={`${i}-${item.headline}`} className="ctx-item">
