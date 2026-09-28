@@ -95,6 +95,11 @@ class Settings:
     news_timeout: float = 5.0  # seconds per provider request
     news_fallback_enabled: bool = True  # serve local sample headlines on failure
 
+    # Milestone B FinBERT sentiment (standalone layer in sentiment.py; not
+    # wired into anomalies yet)
+    sentiment_enabled: bool = True
+    sentiment_model: str = "ProsusAI/finbert"
+
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
@@ -135,6 +140,11 @@ class Settings:
             news_fallback_enabled=_env_flag(
                 os.getenv("NEWS_FALLBACK_ENABLED"), cls.news_fallback_enabled
             ),
+            sentiment_enabled=_env_flag(
+                os.getenv("SENTIMENT_ENABLED"), cls.sentiment_enabled
+            ),
+            sentiment_model=(os.getenv("SENTIMENT_MODEL") or "").strip()
+            or cls.sentiment_model,
         )
 
 
