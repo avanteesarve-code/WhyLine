@@ -14,7 +14,9 @@ sentiment-scored crypto news to each anomaly.
   anomaly markers, tooltips, watchlist, anomaly log, dark/light themes.
 - ✅ **Milestone B (done)** — the semantic half: every live anomaly broadcasts
   immediately with `attribution: pending`, then is enriched asynchronously
-  with Finnhub crypto news + FinBERT headline sentiment. The UI renders
+  with Finnhub crypto news + FinBERT headline sentiment. Historical
+  anomalies from the startup scan are enriched the same way in the
+  background. The UI renders
   **real news only** — sample/fallback headlines are never displayed.
 
 ## Architecture
@@ -114,6 +116,10 @@ Tune thresholds against real history with `python backend/tune.py`.
    separate `attribution` WebSocket event broadcasts it.
 5. REST (`/api/anomalies`, `/api/history`) and WebSocket always expose the
    same authoritative state; the frontend store merges updates by anomaly id.
+6. After startup, a background pass (`attribute_history` in `main.py`)
+   marks every historical anomaly `pending` and attributes them one at a
+   time, newest first, through the same `run_attribution` path. Anomalies
+   carry `live: true|false` so the UI can still tell live detections apart.
 
 ## Real news provider
 
@@ -146,9 +152,10 @@ into the Hugging Face cache); later runs reuse it.
 
 ## Historical vs fallback behavior
 
-- **Historical anomalies** (backfill scan at startup) intentionally carry
-  `attribution: null` and render no news section — only *live* anomalies
-  are attributed.
+- **Historical anomalies** (backfill scan at startup) are attributed in the
+  background after startup, using the same time-bounded matching as live
+  ones (news from up to 24 h before to 15 min after the anomaly). They
+  carry `live: false`.
 - **Fallback (sample) headlines** exist server-side for no-key /
   provider-failure / empty-feed cases so the pipeline never crashes, but
   the UI deliberately never renders them: those states show `Finding

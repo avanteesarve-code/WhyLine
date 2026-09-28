@@ -23,6 +23,7 @@ export interface Anomaly {
   vol_ratio: number
   explanation: string
   attribution?: Attribution | null
+  live?: boolean // detected on the live stream, not the startup history scan
 }
 
 export interface NewsItem {

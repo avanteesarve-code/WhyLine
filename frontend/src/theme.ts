@@ -18,28 +18,29 @@ export interface ChartColors {
   anomaly: string
 }
 
+// Must stay in sync with the matching tokens in index.css.
 const COLORS: Record<ThemeName, ChartColors> = {
   dark: {
-    surface: '#1a1a19',
-    text: '#898781',
-    grid: '#2c2c2a',
-    border: '#383835',
-    up: '#0ca30c',
-    down: '#d03b3b',
-    volUp: 'rgba(12, 163, 12, 0.45)',
-    volDown: 'rgba(208, 59, 59, 0.45)',
-    anomaly: '#fab219',
+    surface: '#101315',
+    text: '#7d8784',
+    grid: '#1a1f22',
+    border: '#262c30',
+    up: '#22b573',
+    down: '#ef5a4c',
+    volUp: 'rgba(34, 181, 115, 0.32)',
+    volDown: 'rgba(239, 90, 76, 0.32)',
+    anomaly: '#f5b83d',
   },
   light: {
-    surface: '#fcfcfb',
-    text: '#898781',
-    grid: '#e1e0d9',
-    border: '#c3c2b7',
-    up: '#0ca30c',
-    down: '#d03b3b',
-    volUp: 'rgba(12, 163, 12, 0.45)',
-    volDown: 'rgba(208, 59, 59, 0.45)',
-    anomaly: '#c98500',
+    surface: '#fbf9f4',
+    text: '#6b7072',
+    grid: '#ece8df',
+    border: '#d9d4c8',
+    up: '#0f8a52',
+    down: '#cf3b30',
+    volUp: 'rgba(15, 138, 82, 0.28)',
+    volDown: 'rgba(207, 59, 48, 0.28)',
+    anomaly: '#b8740a',
   },
 }
 
@@ -53,14 +54,18 @@ export function chartOptions(theme: ThemeName): DeepPartial<ChartOptions> {
     layout: {
       background: { type: ColorType.Solid, color: c.surface },
       textColor: c.text,
-      fontFamily:
-        'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+      fontFamily: 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
+      fontSize: 11,
     },
     grid: {
       vertLines: { color: c.grid },
       horzLines: { color: c.grid },
     },
-    crosshair: { mode: CrosshairMode.Normal },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: { color: c.text, labelBackgroundColor: c.border },
+      horzLine: { color: c.text, labelBackgroundColor: c.border },
+    },
     rightPriceScale: {
       borderColor: c.border,
       scaleMargins: { top: 0.08, bottom: 0.22 }, // keep clear of volume pane

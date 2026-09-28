@@ -17,6 +17,7 @@ import type {
 } from 'lightweight-charts'
 import { marketStore } from './marketStore'
 import AttributionView from './AttributionView'
+import Tip from './Tip'
 import { chartColors, chartOptions } from './theme'
 import type { ChartColors } from './theme'
 import {
@@ -56,7 +57,8 @@ const METHOD_LABELS: Record<string, string> = {
 
 // Tallest the hover tooltip may grow (attribution content included); the
 // CSS max-height on .anomaly-tooltip matches this value.
-const TOOLTIP_MAX_HEIGHT = 340
+const TOOLTIP_MAX_HEIGHT = 440
+const TOOLTIP_WIDTH = 300 // matches .anomaly-tooltip width
 
 function toCandleData(c: Candle): CandlestickData {
   return {
@@ -156,6 +158,10 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
       setHover(anomaly ? { anomaly, x: param.point.x, y: param.point.y } : null)
     }
     chart.subscribeCrosshairMove(onMove)
+    // The canvas can't reflow text; repaint axes once the web fonts arrive.
+    void document.fonts?.ready.then(() => {
+      chartRef.current?.applyOptions(chartOptions(themeRef.current))
+    })
 
     return () => {
       chart.unsubscribeCrosshairMove(onMove)
@@ -260,8 +266,11 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
   }, [jump, symbol, loaded])
 
   const el = containerRef.current
+  // Sit right of the cursor; flip to its left near the price axis.
   const tooltipLeft = hover
-    ? Math.min(hover.x + 16, (el?.clientWidth ?? 600) - 300)
+    ? hover.x + 18 + TOOLTIP_WIDTH > (el?.clientWidth ?? 600) - 70
+      ? Math.max(hover.x - 18 - TOOLTIP_WIDTH, 8)
+      : hover.x + 18
     : 0
   const tooltipTop = hover
     ? Math.min(
@@ -270,67 +279,100 @@ export default function ChartPanel({ symbol, theme, jump }: Props) {
       )
     : 0
 
+  const a = hover?.anomaly
   return (
     <section className="panel chart-panel">
       <div className="chart-header">
         <div className="chart-title">
-          <span className="chart-symbol">{symbol.replace(/USDT$/, '')}</span>
-          <span className="chart-quote">/ USDT · {marketStore.interval}</span>
+          <h2 className="chart-symbol">{symbol.replace(/USDT$/, '')}</h2>
+          <span className="chart-quote">/USDT</span>
+          <span className="interval-chip">{marketStore.interval}</span>
         </div>
         <OhlcReadout symbol={symbol} hovered={crosshairCandle} />
-        <button
-          className="live-button"
-          onClick={() => chartRef.current?.timeScale().scrollToRealTime()}
-          title="Scroll to the newest candle"
-        >
-          ⏵ Live
-        </button>
+        <Tip content="Scroll to the newest candle" side="bottom">
+          <button
+            className="live-button"
+            onClick={() => chartRef.current?.timeScale().scrollToRealTime()}
+          >
+            <i aria-hidden="true" />
+            Go live
+          </button>
+        </Tip>
       </div>
       <div className="chart-body">
         <div ref={containerRef} className="chart-container" />
-        {!loaded && <div className="chart-overlay">loading history…</div>}
-        {hover && (
+        {!loaded && (
+          <div className="chart-overlay">
+            <span className="loader" aria-hidden="true" />
+            Loading history…
+          </div>
+        )}
+        {a && (
           <div
-            className="anomaly-tooltip"
+            className={`anomaly-tooltip tip-${a.direction}`}
             style={{ left: tooltipLeft, top: tooltipTop }}
           >
             <div className="tooltip-head">
-              <span className={`dir dir-${hover.anomaly.direction}`}>
-                {hover.anomaly.direction === 'up' ? '▲' : '▼'}{' '}
-                {fmtPct(hover.anomaly.pct_change)}
-              </span>
-              <span className="tooltip-time">
-                {fmtLocalTime(hover.anomaly.time, true)}
-              </span>
+              <span className="tooltip-kicker">Anomaly</span>
+              <span className="tooltip-time">{fmtLocalTime(a.time, true)}</span>
             </div>
-            <p className="tooltip-text">{hover.anomaly.explanation}</p>
-            <div className="tooltip-stats">
-              {hover.anomaly.return_z !== null && (
-                <span>price z {hover.anomaly.return_z.toFixed(1)}</span>
-              )}
-              {hover.anomaly.volume_z !== null && (
-                <span>vol z {hover.anomaly.volume_z.toFixed(1)}</span>
-              )}
-              <span>vol ×{hover.anomaly.vol_ratio.toFixed(1)}</span>
-              {hover.anomaly.iforest_score !== null && (
-                <span>IF {hover.anomaly.iforest_score.toFixed(3)}</span>
-              )}
+            <div className={`tooltip-move dir-${a.direction}`}>
+              {a.direction === 'up' ? '▲' : '▼'} {fmtPct(a.pct_change)}
             </div>
+            <p className="tooltip-text">{a.explanation}</p>
+            <dl className="tooltip-stats">
+              <div>
+                <dt>Price z</dt>
+                <dd>{a.return_z !== null ? a.return_z.toFixed(1) : '—'}</dd>
+              </div>
+              <div>
+                <dt>Volume z</dt>
+                <dd>{a.volume_z !== null ? a.volume_z.toFixed(1) : '—'}</dd>
+              </div>
+              <div>
+                <dt>Vol ×</dt>
+                <dd>{a.vol_ratio.toFixed(1)}</dd>
+              </div>
+              <div>
+                <dt>IF score</dt>
+                <dd>{a.iforest_score !== null ? a.iforest_score.toFixed(3) : '—'}</dd>
+              </div>
+            </dl>
             <div className="tooltip-methods">
-              {hover.anomaly.methods.map((m) => (
+              {a.methods.map((m) => (
                 <span key={m} className="method-tag">
                   {METHOD_LABELS[m] ?? m}
                 </span>
               ))}
             </div>
             <AttributionView
-              attribution={hover.anomaly.attribution}
-              anomalyTime={hover.anomaly.time}
+              attribution={a.attribution}
+              anomalyTime={a.time}
               variant="tooltip"
             />
           </div>
         )}
       </div>
+      <footer className="chart-legend" aria-label="Detector legend">
+        <span>
+          <b className="legend-marker">▲▼</b> anomaly marker — hover for evidence
+        </span>
+        <Tip content="Log-return compared with a trailing 60-candle baseline. Flags a move of 3 or more standard deviations.">
+          <span tabIndex={0}>
+            <b className="tag">Z</b> price z-score |z| ≥ 3
+          </span>
+        </Tip>
+        <Tip content="Log-volume compared with the same trailing baseline. Flags one-sided surges of 3.5σ or more.">
+          <span tabIndex={0}>
+            <b className="tag">VOL</b> volume z-score ≥ 3.5
+          </span>
+        </Tip>
+        <Tip content="Multivariate outlier over return, high–low range and volume. Catches unusual combinations the z-scores miss.">
+          <span tabIndex={0}>
+            <b className="tag">IF</b> Isolation Forest outlier
+          </span>
+        </Tip>
+      </footer>
     </section>
   )
 }
@@ -369,23 +411,30 @@ function OhlcReadout({
     : fmtLocalTime(candle.time, true)
   return (
     <div className="ohlc">
-      <span className="ohlc-time">{timeLabel}</span>
-      <span>
-        O <b>{fmtPrice(candle.open)}</b>
-      </span>
-      <span>
-        H <b>{fmtPrice(candle.high)}</b>
-      </span>
-      <span>
-        L <b>{fmtPrice(candle.low)}</b>
-      </span>
-      <span>
-        C <b className={dirClass}>{fmtPrice(candle.close)}</b>
-      </span>
-      <span>
-        Vol <b>{fmtVolume(candle.volume)}</b>
-      </span>
-      <span className={dirClass}>{fmtPct(changePct)}</span>
+      <div className="ohlc-hero">
+        <span className={`ohlc-price ${dirClass}`}>{fmtPrice(candle.close)}</span>
+        <span className="ohlc-sub">
+          <span className={dirClass}>{fmtPct(changePct)}</span> · {timeLabel}
+        </span>
+      </div>
+      <dl className="ohlc-stats">
+        <div>
+          <dt>Open</dt>
+          <dd>{fmtPrice(candle.open)}</dd>
+        </div>
+        <div>
+          <dt>High</dt>
+          <dd>{fmtPrice(candle.high)}</dd>
+        </div>
+        <div>
+          <dt>Low</dt>
+          <dd>{fmtPrice(candle.low)}</dd>
+        </div>
+        <div>
+          <dt>Volume</dt>
+          <dd>{fmtVolume(candle.volume)}</dd>
+        </div>
+      </dl>
     </div>
   )
 }

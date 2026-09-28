@@ -100,6 +100,7 @@ class MarketState:
 
         anomaly = ss.detector.update(candle)
         if anomaly is not None:
+            anomaly.live = True
             ss.anomalies.append(anomaly)
         return anomaly
 

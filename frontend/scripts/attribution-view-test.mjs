@@ -22,7 +22,7 @@ const workdir = join(frontendDir, '.tmp-views-test')
 // Fresh scratch dir (also cleans up after a previously failed run).
 rmSync(workdir, { recursive: true, force: true })
 mkdirSync(workdir, { recursive: true })
-for (const f of ['AttributionView.tsx', 'format.ts', 'types.ts']) {
+for (const f of ['AttributionView.tsx', 'Tip.tsx', 'format.ts', 'types.ts']) {
   cpSync(join(frontendDir, 'src', f), join(workdir, f))
 }
 writeFileSync(
@@ -53,7 +53,8 @@ try {
   const emittedView = join(workdir, 'out', 'AttributionView.js')
   writeFileSync(
     emittedView,
-    readFileSync(emittedView, 'utf8').replaceAll("from './format'", "from './format.js'"),
+    readFileSync(emittedView, 'utf8').replaceAll("from './format'", "from './format.js'")
+    .replaceAll("from './Tip'", "from './Tip.js'"),
   )
 
   const { default: AttributionView } = await import(

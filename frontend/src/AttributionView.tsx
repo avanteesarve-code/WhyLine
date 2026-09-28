@@ -1,3 +1,4 @@
+import Tip from './Tip'
 import { fmtLocalTime } from './format'
 import type { Attribution, NewsItem } from './types'
 
@@ -46,17 +47,25 @@ function ToneChip({
   label: NonNullable<NewsItem['sentiment_label']>
   score: NewsItem['sentiment_score']
 }): React.JSX.Element {
-  const text =
-    typeof score === 'number'
-      ? `tone: ${label} ${score >= 0 ? '+' : ''}${score.toFixed(2)}`
-      : `tone: ${label}`
+  const hasScore = typeof score === 'number'
+  const clamped = hasScore ? Math.max(-1, Math.min(1, score)) : 0
+  // Diverging meter centred on 0: fills left (negative) or right (positive).
+  const fill = {
+    left: `${50 + Math.min(clamped, 0) * 50}%`,
+    width: `${Math.abs(clamped) * 50}%`,
+  }
   return (
-    <span
-      className="ctx-tone"
-      title="FinBERT headline tone: P(positive) − P(negative), range −1 to +1. Not a price signal."
-    >
-      {text}
-    </span>
+    <Tip content="FinBERT headline tone: P(positive) − P(negative), from −1 to +1. Describes the headline, not the price.">
+      <span className={`ctx-tone tone-${label}`} tabIndex={0}>
+        {hasScore && (
+          <span className="tone-meter" aria-hidden="true">
+            <span style={fill} />
+          </span>
+        )}
+        {label}
+        {hasScore && ` ${score >= 0 ? '+' : ''}${score.toFixed(2)}`}
+      </span>
+    </Tip>
   )
 }
 
@@ -95,7 +104,7 @@ export default function AttributionView({
   }
 
   if (attribution.status === 'pending') {
-    return <p className="ctx-hint">Finding related news...</p>
+    return <p className="ctx-hint ctx-pending">Finding related news...</p>
   }
 
   // Fallback/sample items are never rendered as news. Collapse them to the
@@ -131,17 +140,16 @@ export default function AttributionView({
     <section className={`ctx-section ctx-${variant}`}>
       <div className="ctx-heading-row">
         <h4 className="ctx-heading">Related news</h4>
+        <span className="ctx-caption">association, not causation</span>
       </div>
-      <p className="ctx-caption">Semantic context — association, not causation</p>
       <ul className="ctx-list">
         {items.map((item, i) => (
           <li key={`${i}-${item.headline}`} className="ctx-item">
             <Headline item={item} allowLink={allowLink} />
             <div className="ctx-meta">
-              {item.source && <span>{item.source}</span>}
+              {item.source && <span className="ctx-source">{item.source}</span>}
               {typeof item.published_at === 'number' && (
-                <span>
-                  {fmtLocalTime(item.published_at, true)} ·{' '}
+                <span title={fmtLocalTime(item.published_at, true)}>
                   {fmtOffset(item.published_at, anomalyTime)}
                 </span>
               )}

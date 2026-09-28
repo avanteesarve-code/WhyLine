@@ -58,7 +58,8 @@ class Anomaly(BaseModel):
     pct_change: float  # close-over-close % move of the flagged candle
     vol_ratio: float  # volume / trailing median volume
     explanation: str  # human-readable one-liner shown in the UI
-    attribution: Attribution | None = None  # None = not attributed (Milestone A behaviour / backfilled history).
+    attribution: Attribution | None = None  # None = not (yet) attributed, or attribution disabled.
+    live: bool = False  # True when detected on the live stream, not the startup backfill scan.
 
 
 # ---------------------------------------------------------------------------

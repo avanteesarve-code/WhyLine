@@ -24,6 +24,7 @@ export interface TickerRow {
   changePct: number | null // over the trailing hour (60 candles at 1m)
   anomalyCount: number
   lastAnomalyAt: number | null // wall-clock ms of last *live* anomaly
+  spark: number[] // closes over the trailing hour, for the watchlist sparkline
 }
 
 export type ChartEvent =
@@ -66,6 +67,7 @@ class MarketStore {
 
   private feed: Anomaly[] = []
   private feedListeners = new Set<() => void>()
+  private liveListeners = new Set<(anomaly: Anomaly) => void>()
 
   // ---- wire protocol -----------------------------------------------------
 
@@ -213,6 +215,7 @@ class MarketStore {
     this.emitChart(anomaly.symbol, { type: 'anomaly', anomaly })
     this.feed = [anomaly, ...this.feed].slice(0, FEED_LIMIT)
     for (const fn of this.feedListeners) fn()
+    if (live) for (const fn of this.liveListeners) fn(anomaly)
     this.scheduleTickerFlush()
   }
 
@@ -319,6 +322,7 @@ class MarketStore {
               : null,
           anomalyCount: d?.anomalies.length ?? 0,
           lastAnomalyAt: this.liveAnomalyAt.get(symbol) ?? null,
+          spark: candles.slice(-HOUR_CANDLES - 1).map((c) => c.close),
         }
       })
       for (const fn of this.tickerListeners) fn()
@@ -332,6 +336,12 @@ class MarketStore {
   subscribeFeed = (fn: () => void): (() => void) => {
     this.feedListeners.add(fn)
     return () => this.feedListeners.delete(fn)
+  }
+
+  /** Fires once per newly detected live anomaly (never for history loads). */
+  subscribeLive = (fn: (anomaly: Anomaly) => void): (() => void) => {
+    this.liveListeners.add(fn)
+    return () => this.liveListeners.delete(fn)
   }
 
   private rebuildFeed(): void {

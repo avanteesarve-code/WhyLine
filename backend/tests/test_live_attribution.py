@@ -14,7 +14,9 @@ Test map (per the fix request):
     TEST 4  WebSocket sequence: anomaly(pending) then attribution(ok)
     TEST 5  attribution message carries the merge contract the frontend
             store needs (matching anomaly_id, no duplicate anomaly)
-    TEST 6  historical (seed) anomalies stay unattributed (None)
+    TEST 6  historical (seed) anomalies are attributed in the background,
+            newest first; live anomalies are flagged ``live`` and left to
+            the live path
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ import sentiment
 from attribute import run_attribution
 from config import Settings
 from detect import build_anomaly
-from main import create_app, stream_worker
+from main import attribute_history, create_app, stream_worker
 from models import Candle, NewsItem, attribution_message
 from news import NewsResult
 from sentiment import SentimentBatch, SentimentResult
@@ -297,34 +299,68 @@ def test_5_attribution_message_merge_contract(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# TEST 6: historical (seed) anomalies stay unattributed
+# TEST 6: historical (seed) anomalies get attributed in the background
 # ---------------------------------------------------------------------------
 
 
-def test_6_historical_anomalies_stay_unattributed():
-    settings = _settings()
-    app = create_app(settings, connect_binance=False)
-    market: MarketState = app.state.market
-
-    candle = Candle(time=START, open=100, high=106, low=100, close=105, volume=50)
-    historical = build_anomaly(
+def _historical(t: int):
+    candle = Candle(time=t, open=100, high=106, low=100, close=105, volume=50)
+    return build_anomaly(
         symbol="BTCUSDT", candle=candle, pct_change=5.0, methods=["return_z"],
         return_z=4.2, volume_z=None, iforest_score=None, vol_ratio=2.0,
     )
-    assert historical.attribution is None
-    market.seed("BTCUSDT", [], [historical])
 
-    # Seed path never assigns pending; unknown ids are left alone.
-    assert market.get_anomaly("BTCUSDT", historical.id) is historical
-    assert historical.attribution is None
+
+def test_6_historical_anomalies_are_attributed_newest_first(monkeypatch):
+    _ok_fakes(monkeypatch)
+    order: list[int] = []
+    fake_news = news.fetch_news
+
+    async def _tracking_news(symbol, anomaly_time, settings_, *, client=None):
+        order.append(anomaly_time)
+        return await fake_news(symbol, anomaly_time, settings_, client=client)
+
+    monkeypatch.setattr(news, "fetch_news", _tracking_news)
+
+    settings = _settings()
+    app = create_app(settings, connect_binance=False)
+    market: MarketState = app.state.market
+    older, newer = _historical(START), _historical(START + 600)
+    assert older.attribution is None and not older.live
+    market.seed("BTCUSDT", [], [older, newer])
+
+    sent: list[dict] = []
+
+    async def _collect(message):
+        sent.append(message)
+
+    monkeypatch.setattr(market.broadcaster, "broadcast", _collect)
+    run(attribute_history(market))
+
+    assert order == [START + 600, START]  # newest first
+    for stored in (older, newer):
+        assert market.get_anomaly("BTCUSDT", stored.id) is stored
+        assert stored.attribution is not None
+        assert stored.attribution.status == "ok"
+        assert stored.live is False
+    assert [m["anomaly_id"] for m in sent] == [newer.id, older.id]
 
     with TestClient(app) as client:
         anomalies = client.get("/api/anomalies").json()["anomalies"]
-        history = client.get("/api/history/BTCUSDT").json()["anomalies"]
-    assert len(anomalies) == 1
-    assert anomalies[0]["attribution"] is None
-    assert len(history) == 1
-    assert history[0]["attribution"] is None
+    assert {a["attribution"]["status"] for a in anomalies} == {"ok"}
+    assert {a["live"] for a in anomalies} == {False}
+
+
+def test_6_history_attribution_skips_live_anomalies(monkeypatch):
+    _ok_fakes(monkeypatch)
+    market = MarketState(_settings())
+    spike_time = _seed_baseline(market)
+    fresh = market.apply_kline("BTCUSDT", _spike(spike_time), closed=True)
+    assert fresh is not None and fresh.live is True
+
+    run(attribute_history(market))
+    # The live path owns live anomalies; the history pass never touches them.
+    assert fresh.attribution is None
 
 
 def test_6_disabled_attribution_is_milestone_a():

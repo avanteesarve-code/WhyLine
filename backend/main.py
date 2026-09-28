@@ -69,6 +69,38 @@ async def bootstrap(market: MarketState) -> None:
     await asyncio.gather(*(load(sym) for sym in s.symbols))
 
 
+async def attribute_history(market: MarketState) -> None:
+    """Attach related news to the backfilled (historical) anomalies.
+
+    Runs once in the background after ``bootstrap``, newest anomaly first so
+    the entries a viewer sees first fill in first. Every anomaly is marked
+    ``pending`` up front, so REST never serves a historical anomaly without
+    an attribution state while this runs. Sequential on purpose: all
+    anomalies share one cached provider response and FinBERT inference is
+    serialized anyway, so parallel tasks would only add provider pressure.
+    Matching stays time-bounded per anomaly (see ``news.fetch_news``).
+    """
+    s = market.settings
+    backlog = sorted(
+        (
+            a
+            for ss in market.symbols.values()
+            for a in ss.anomalies
+            if not a.live and a.attribution is None
+        ),
+        key=lambda a: a.time,
+        reverse=True,
+    )
+    for anomaly in backlog:
+        market.mark_pending(anomaly.symbol, anomaly.id)
+    for anomaly in backlog:
+        await attribute.run_attribution(
+            anomaly, s, market.broadcaster.broadcast, state=market
+        )
+    if backlog:
+        log.info("attributed %d historical anomalies", len(backlog))
+
+
 async def stream_worker(market: MarketState) -> None:
     """Consume the Binance stream and fan events out to frontend sockets."""
     s = market.settings
@@ -139,15 +171,24 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        worker: asyncio.Task | None = None
+        tasks: list[asyncio.Task] = []
         if connect_binance:
             await bootstrap(market)
-            worker = asyncio.create_task(stream_worker(market), name="binance-stream")
+            tasks.append(
+                asyncio.create_task(stream_worker(market), name="binance-stream")
+            )
+            if s.attribution_enabled:
+                tasks.append(
+                    asyncio.create_task(
+                        attribute_history(market), name="history-attribution"
+                    )
+                )
         yield
-        if worker is not None:
-            worker.cancel()
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
-                await worker
+                await task
 
     app = FastAPI(title="WhyLine", version="0.1.0", lifespan=lifespan)
     app.state.market = market
