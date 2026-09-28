@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Candle(BaseModel):
@@ -23,6 +23,26 @@ class Candle(BaseModel):
     volume: float
 
 
+class NewsItem(BaseModel):
+    """One headline attached to an anomaly (Milestone B semantic context)."""
+
+    headline: str
+    source: str | None = None  # publisher name
+    url: str | None = None
+    published_at: int | None = None  # UNIX seconds UTC, same convention as Candle.time
+    sentiment_label: Literal["positive", "negative", "neutral"] | None = None
+    sentiment_score: float | None = None  # signed score in roughly [-1, +1]
+
+
+class Attribution(BaseModel):
+    """Semantic attribution for an anomaly (filled by a later step)."""
+
+    status: Literal["pending", "ok", "no_news", "error"]
+    is_fallback: bool = False  # True when headlines come from a local canned set
+    items: list[NewsItem] = Field(default_factory=list)
+    error: str | None = None
+
+
 class Anomaly(BaseModel):
     """A flagged candle plus the quantitative evidence behind the flag."""
 
@@ -38,6 +58,7 @@ class Anomaly(BaseModel):
     pct_change: float  # close-over-close % move of the flagged candle
     vol_ratio: float  # volume / trailing median volume
     explanation: str  # human-readable one-liner shown in the UI
+    attribution: Attribution | None = None  # None = not attributed (Milestone A behaviour / backfilled history).
 
 
 # ---------------------------------------------------------------------------
@@ -60,3 +81,15 @@ def candle_message(symbol: str, candle: Candle, closed: bool) -> dict:
 
 def anomaly_message(anomaly: Anomaly) -> dict:
     return {"type": "anomaly", "anomaly": anomaly.model_dump()}
+
+
+def attribution_message(
+    anomaly_id: str, symbol: str, attribution: Attribution
+) -> dict:
+    """Enrichment arrives separately because the frontend dedupes anomalies by id."""
+    return {
+        "type": "attribution",
+        "anomaly_id": anomaly_id,
+        "symbol": symbol,
+        "attribution": attribution.model_dump(),
+    }

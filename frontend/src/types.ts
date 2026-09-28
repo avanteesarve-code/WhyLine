@@ -22,6 +22,23 @@ export interface Anomaly {
   pct_change: number
   vol_ratio: number
   explanation: string
+  attribution?: Attribution | null
+}
+
+export interface NewsItem {
+  headline: string
+  source: string | null
+  url: string | null
+  published_at: number | null
+  sentiment_label: 'positive' | 'negative' | 'neutral' | null
+  sentiment_score: number | null
+}
+
+export interface Attribution {
+  status: 'pending' | 'ok' | 'no_news' | 'error'
+  is_fallback: boolean
+  items: NewsItem[]
+  error: string | null
 }
 
 export interface HistoryResponse {
@@ -35,6 +52,7 @@ export type ServerMessage =
   | { type: 'hello'; symbols: string[]; interval: string }
   | { type: 'candle'; symbol: string; closed: boolean; candle: Candle }
   | { type: 'anomaly'; anomaly: Anomaly }
+  | { type: 'attribution'; anomaly_id: string; symbol: string; attribution: Attribution }
 
 export type ConnectionStatus = 'connecting' | 'live' | 'reconnecting'
 
