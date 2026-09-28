@@ -1,4 +1,10 @@
-import type { Anomaly, Candle, HistoryResponse, ServerMessage } from './types'
+import type {
+  Anomaly,
+  Attribution,
+  Candle,
+  HistoryResponse,
+  ServerMessage,
+} from './types'
 
 // A tiny external store, deliberately outside React state: the live feed is
 // 10-40 messages/second and must reach the chart imperatively. Components
@@ -24,6 +30,7 @@ export type ChartEvent =
   | { type: 'reset' }
   | { type: 'candle'; candle: Candle; closed: boolean }
   | { type: 'anomaly'; anomaly: Anomaly }
+  | { type: 'attribution'; anomaly: Anomaly }
 
 const HOUR_CANDLES = 60
 const FEED_LIMIT = 150
@@ -33,6 +40,16 @@ const TICKER_FLUSH_MS = 250
 type PendingEvent =
   | { kind: 'candle'; candle: Candle; closed: boolean }
   | { kind: 'anomaly'; anomaly: Anomaly }
+  | { kind: 'attribution'; anomalyId: string; attribution: Attribution }
+
+/** Final attribution states: a later `pending` must never overwrite these. */
+function isFinalAttribution(
+  a: Attribution | null | undefined,
+): a is Attribution {
+  return (
+    a?.status === 'ok' || a?.status === 'no_news' || a?.status === 'error'
+  )
+}
 
 class MarketStore {
   symbols: string[] = []
@@ -59,6 +76,8 @@ class MarketStore {
       this.applyCandle(msg.symbol, msg.candle, msg.closed)
     } else if (msg.type === 'anomaly') {
       this.applyAnomaly(msg.anomaly, true)
+    } else if (msg.type === 'attribution') {
+      this.applyAttribution(msg.symbol, msg.anomaly_id, msg.attribution)
     }
   }
 
@@ -94,14 +113,36 @@ class MarketStore {
     const d = this.data.get(resp.symbol)
     if (!d) return
     d.candles = [...resp.candles]
-    d.anomalies = [...resp.anomalies]
+    // Reconnect race: attribution may have completed (final) after the
+    // history snapshot was serialized. Never let a stale snapshot undo it,
+    // and never introduce a `pending` state where none was known. The
+    // backend response object itself is left untouched.
+    const existingById = new Map(d.anomalies.map((a) => [a.id, a]))
+    d.anomalies = resp.anomalies.map((incoming) => {
+      const existing = existingById.get(incoming.id)
+      if (!existing) return incoming
+      if (
+        isFinalAttribution(existing.attribution) &&
+        (!incoming.attribution || incoming.attribution.status === 'pending')
+      ) {
+        return { ...incoming, attribution: existing.attribution }
+      }
+      if (
+        !existing.attribution &&
+        incoming.attribution?.status === 'pending'
+      ) {
+        return { ...incoming, attribution: null }
+      }
+      return incoming
+    })
     d.loaded = true
     const queued = this.pending.get(resp.symbol) ?? []
     this.pending.delete(resp.symbol)
     this.emitChart(resp.symbol, { type: 'reset' })
     for (const ev of queued) {
       if (ev.kind === 'candle') this.applyCandle(resp.symbol, ev.candle, ev.closed)
-      else this.applyAnomaly(ev.anomaly, true)
+      else if (ev.kind === 'anomaly') this.applyAnomaly(ev.anomaly, true)
+      else this.applyAttribution(resp.symbol, ev.anomalyId, ev.attribution)
     }
     this.rebuildFeed()
     this.scheduleTickerFlush()
@@ -141,6 +182,56 @@ class MarketStore {
     this.feed = [anomaly, ...this.feed].slice(0, FEED_LIMIT)
     for (const fn of this.feedListeners) fn()
     this.scheduleTickerFlush()
+  }
+
+  /** Merge a backend attribution update into the existing anomaly.
+   *
+   *  An update — never a new anomaly: unknown ids are ignored, ordering and
+   *  counts are untouched, and a `pending` arrival never downgrades a final
+   *  (ok / no_news / error) state. Malformed payloads are ignored safely. */
+  private applyAttribution(
+    symbol: string,
+    anomalyId: string,
+    attribution: Attribution,
+  ): void {
+    if (typeof anomalyId !== 'string' || anomalyId.length === 0) return
+    if (typeof attribution !== 'object' || attribution === null) return
+    const status = attribution.status
+    if (
+      status !== 'pending' &&
+      status !== 'ok' &&
+      status !== 'no_news' &&
+      status !== 'error'
+    ) {
+      return
+    }
+    const d = this.data.get(symbol)
+    if (!d) return
+    if (!d.loaded) {
+      this.queuePending(symbol, { kind: 'attribution', anomalyId, attribution })
+      return
+    }
+    const idx = d.anomalies.findIndex((a) => a.id === anomalyId)
+    if (idx < 0) {
+      if (import.meta.env.DEV) {
+        console.debug('[whyline] attribution for unknown anomaly', anomalyId)
+      }
+      return
+    }
+    const current = d.anomalies[idx]
+    if (isFinalAttribution(current.attribution) && status === 'pending') return
+    const updated: Anomaly = { ...current, attribution }
+    d.anomalies[idx] = updated
+    const feedIdx = this.feed.findIndex((a) => a.id === anomalyId)
+    if (feedIdx >= 0) {
+      this.feed = [
+        ...this.feed.slice(0, feedIdx),
+        updated,
+        ...this.feed.slice(feedIdx + 1),
+      ]
+      for (const fn of this.feedListeners) fn()
+    }
+    this.emitChart(symbol, { type: 'attribution', anomaly: updated })
   }
 
   private queuePending(symbol: string, ev: PendingEvent): void {
@@ -221,3 +312,21 @@ class MarketStore {
 }
 
 export const marketStore = new MarketStore()
+
+declare global {
+  interface Window {
+    __whyline?: {
+      handleMessage: (m: ServerMessage) => void
+      getFeed: () => Anomaly[]
+    }
+  }
+}
+
+// Development-only handle for manual attribution validation (no test
+// framework in this frontend). Absent from production builds.
+if (import.meta.env.DEV) {
+  window.__whyline = {
+    handleMessage: marketStore.handleMessage,
+    getFeed: marketStore.getFeed,
+  }
+}
