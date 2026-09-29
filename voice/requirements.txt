@@ -1,0 +1,2 @@
+pipecat-ai[groq,webrtc,runner]>=1.12,<2
+httpx
